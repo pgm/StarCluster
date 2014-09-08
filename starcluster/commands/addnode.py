@@ -93,6 +93,7 @@ class CmdAddNode(ClusterCompleter):
         parser.add_option(
             "-b", "--bid", dest="spot_bid", action="store", type="float",
             default=None, help="spot bid for new node(s) (in $ per hour)")
+        parser.add_option("-s", "--spot-only", dest="spot_only", action="store_true", default=False, help="Only create the spot request, but do not wait for it to be fulfilled nor initialize the node once it is.")
         parser.add_option(
             "-x", "--no-create", dest="no_create", action="store_true",
             default=False, help="do not launch new EC2 instances when "
@@ -121,8 +122,12 @@ class CmdAddNode(ClusterCompleter):
         if not self.opts.alias and self.opts.no_create:
             self.parser.error("you must specify one or more node aliases via "
                               "the -a option when using -x")
+        if self.opts.no_create and self.opts.spot_only:
+            self.parser.error("you cannot use --no-create and --spot-only together")
+
         self.cm.add_nodes(tag, num_nodes, aliases=aliases,
                           image_id=self.opts.image_id,
                           instance_type=self.opts.instance_type,
                           zone=self.opts.zone, spot_bid=self.opts.spot_bid,
-                          no_create=self.opts.no_create)
+                          no_create=self.opts.no_create,
+                          spot_only=self.opts.spot_only)

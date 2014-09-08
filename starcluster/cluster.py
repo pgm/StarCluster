@@ -178,7 +178,7 @@ class ClusterManager(managers.Manager):
 
     def add_nodes(self, cluster_name, num_nodes, aliases=None, no_create=False,
                   image_id=None, instance_type=None, zone=None,
-                  placement_group=None, spot_bid=None):
+                  placement_group=None, spot_bid=None, spot_only=False):
         """
         Add one or more nodes to cluster
         """
@@ -186,7 +186,7 @@ class ClusterManager(managers.Manager):
         return cl.add_nodes(num_nodes, aliases=aliases, image_id=image_id,
                             instance_type=instance_type, zone=zone,
                             placement_group=placement_group, spot_bid=spot_bid,
-                            no_create=no_create)
+                            no_create=no_create, spot_only=spot_only)
 
     def remove_node(self, cluster_name, alias=None, terminate=True,
                     force=False):
@@ -997,7 +997,7 @@ class Cluster(object):
 
     def add_nodes(self, num_nodes, aliases=None, image_id=None,
                   instance_type=None, zone=None, placement_group=None,
-                  spot_bid=None, no_create=False):
+                  spot_bid=None, no_create=False, spot_only=False):
         """
         Add new nodes to this cluster
 
@@ -1035,11 +1035,20 @@ class Cluster(object):
                 self.ec2.wait_for_propagation(spot_requests=resp)
             else:
                 self.ec2.wait_for_propagation(instances=resp[0].instances)
-        self.wait_for_cluster(msg="Waiting for node(s) to come up...")
-        log.debug("Adding node(s): %s" % aliases)
-        for alias in aliases:
-            node = self.get_node(alias)
-            self.run_plugins(method_name="on_add_node", node=node)
+
+        for node in self.nodes:
+            print "at this time, we know about (alias=%s, id=%s, spot_id=%s) " % (node.alias, node.id, node.spot_id)
+
+        if not spot_only:
+            self.wait_for_cluster(msg="Waiting for node(s) to come up...")
+            log.debug("Adding node(s): %s" % aliases)
+
+            for node in self.nodes:
+                print "now that node is up, we know about (alias=%s, id=%s, spot_id=%s) " % (node.alias, node.id, node.spot_id)
+
+            for alias in aliases:
+                node = self.get_node(alias)
+                self.run_plugins(method_name="on_add_node", node=node)
 
     def remove_node(self, node=None, terminate=True, force=False):
         """

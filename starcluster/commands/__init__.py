@@ -47,6 +47,7 @@ from listpublic import CmdListPublic
 from runplugin import CmdRunPlugin
 from spothistory import CmdSpotHistory
 from loadbalance import CmdLoadBalance
+from scalecluster import CmdScaleCluster
 from shell import CmdShell
 from createkey import CmdCreateKey
 from removekey import CmdRemoveKey
@@ -67,6 +68,7 @@ all_cmds = [
     CmdAddNode(),
     CmdRemoveNode(),
     CmdLoadBalance(),
+    CmdScaleCluster(),
     CmdSshInstance(),
     CmdListInstances(),
     CmdListSpots(),
