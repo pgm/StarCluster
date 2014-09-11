@@ -31,12 +31,32 @@ class CmdScaleCluster(ClusterCompleter):
 
     names = ['scalecluster']
 
+
     def addopts(self, parser):
-        parser.add_option("-i", "--interval", dest="interval",
-                          action="callback", type="int", default=None,
-                          callback=self._positive_int,
-                          help="Load balancer polling interval in seconds "
-                          "(max: 300s)")
+        parser.add_option("--spot_bid", dest="spot_bid",
+                          action="store", type="float", default=None,
+                          help="spot bid price")
+        parser.add_option("--max_to_add", dest="max_to_add",
+                          action="store", type="int", default=None,
+                          help="max_to_add")
+        parser.add_option("--time_to_add_servers_fixed", dest="time_to_add_servers_fixed",
+                          action="store", type="int", default=None,
+                          help="time_to_add_servers_fixed")
+        parser.add_option("--time_to_add_servers_per_server", dest="time_to_add_servers_per_server",
+                          action="store", type="int", default=None,
+                          help="time_to_add_servers_per_server")
+        parser.add_option("--time_per_job", dest="time_per_job",
+                          action="store", type="int", default=None,
+                          help="time_per_job")
+        parser.add_option("--jobs_per_server", dest="jobs_per_server",
+                          action="store", type="int", default=None,
+                          help="jobs_per_server")
+        parser.add_option("--instance_type", dest="instance_type",
+                          action="store", type="string", default=None,
+                          help="instance_type")
+        parser.add_option("--domain", dest="domain",
+                          action="store", type="string", default=None,
+                          help="domain")
         parser.add_option("--dryrun", dest="dryrun", action="store_true",
                           default=False,
                           help="Don't actually stop or start any nodes.  Instead only display warnings for what operations "

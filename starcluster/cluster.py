@@ -1049,6 +1049,7 @@ class Cluster(object):
             for alias in aliases:
                 node = self.get_node(alias)
                 self.run_plugins(method_name="on_add_node", node=node)
+                node.add_tag("initialized", "True")
 
     def remove_node(self, node=None, terminate=True, force=False):
         """
