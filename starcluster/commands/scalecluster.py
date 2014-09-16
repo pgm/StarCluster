@@ -61,6 +61,9 @@ class CmdScaleCluster(ClusterCompleter):
                           default=False,
                           help="Don't actually stop or start any nodes.  Instead only display warnings for what operations "
                             "would be executed.")
+        parser.add_option("--logfile", dest="log_file",
+                          default=None,
+                          help="File to append cluster stats as json object to")
 
     def execute(self, args):
         if not self.cfg.globals.enable_experimental:

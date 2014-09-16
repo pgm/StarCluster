@@ -6,6 +6,8 @@ import boto.sdb
 import math
 import time
 from starcluster.logger import log
+import datetime
+import iso8601
 
 class AltScaler:
     def __init__(self,
@@ -17,7 +19,8 @@ class AltScaler:
                  instance_type="m3.medium",
                  domain="cluster-deadmans-switch",
                  dryrun=False,
-                 jobs_per_server=1):
+                 jobs_per_server=1,
+                 log_file=None):
         self.max_to_add = max_to_add
         self.time_per_job = time_per_job
         self.time_to_add_servers_fixed = time_to_add_servers_fixed
@@ -27,6 +30,7 @@ class AltScaler:
         self.domain = domain
         self.dryrun = dryrun
         self.jobs_per_server = jobs_per_server
+        self.log_file = log_file
 
     def get_unfulfilled_spot_requests(self, ec2):
         requests = ec2.get_all_spot_requests()
@@ -177,12 +181,44 @@ class AltScaler:
 
         return job_count, jobs_per_host
 
+    def only_those_near_hour_boundary(self, instances, min_minutes_into_hour):
+        result = []
+        now = datetime.datetime.now()
+        for instance in instances:
+            uptime = now - iso8601.parse_date(instance.launch_time)
+            uptime_since_hour_start = uptime.total_seconds() % (60*60)
+
+            if uptime_since_hour_start > min_minutes_into_hour:
+                result.append(instance)
+        return result
+
+    def append_to_log(self, job_count, jobs_per_host, uninitialized, idle, active, nodes_to_shutdown):
+        log.warn("uninitialized=%s, idle=%s, active=%s, nodes_to_shutdown=%s", uninitialized, idle, active, nodes_to_shutdown)
+
+        if self.log_file == None:
+            return
+
+        instances = []
+        for l, t in ((uninitialized, "uninitialized"), (idle, "idle"), (active, "active"), ("ready_to_shutdown", nodes_to_shutdown)):
+            for instance in l:
+                alias = None
+                if "alias" in instance.tags:
+                    alias = instance.tags["alias"]
+                instances.append({"alias": alias, "id": l.id, "type": t})
+
+        now = datetime.datetime.now()
+        with open(self.log_file, "a") as fd:
+            fd.write(json.dumps(dict(instances=instances, timestamp=now.isoformat())))
+            fd.write("\n")
+
     def poll_state(self, cluster):
         ec2 = cluster.ec2
 
         job_count, jobs_per_host = self.get_job_status(cluster.master_node.ssh)
         uninitialized, idle, active = self.classify_instances(cluster.ec2, jobs_per_host, [cluster.master_node.id])
-        log.warn("uninitialized=%s, idle=%s, active=%s", uninitialized, idle, active )
+        nodes_to_shutdown = self.only_those_near_hour_boundary(idle, min_minutes_into_hour=45)
+
+        self.append_to_log(job_count, jobs_per_host, uninitialized, idle, active, nodes_to_shutdown)
 
         self.initialize_the_uninitialized(uninitialized, cluster)
         self.shutdown_the_idle(idle, cluster)
