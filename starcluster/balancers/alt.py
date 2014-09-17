@@ -212,7 +212,8 @@ class AltScaler:
             return
 
         instances = []
-        for l, t in ((uninitialized, "uninitialized"), (pending_uninitialized, "pending_uninitialized"), (idle, "idle"), (active, "active"), ("ready_to_shutdown", nodes_to_shutdown)):
+        for l, t in ((uninitialized, "uninitialized"), (pending_uninitialized, "pending_uninitialized"), (idle, "idle"), (active, "active"),
+                     (nodes_to_shutdown, "ready_to_shutdown")):
             for instance in l:
                 alias = None
                 if "alias" in instance.tags:
@@ -220,7 +221,7 @@ class AltScaler:
                 running = 0
                 if alias in jobs_per_host:
                     running = jobs_per_host[alias]
-                instances.append({"alias": alias, "id": l.id, "type": t, "running": running})
+                instances.append({"alias": alias, "id": instance.id, "type": t, "running": running})
 
         now = datetime.datetime.now()
         with open(self.log_file, "a") as fd:
