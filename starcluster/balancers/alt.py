@@ -185,7 +185,8 @@ class AltScaler:
         result = []
         now = datetime.datetime.now()
         for instance in instances:
-            uptime = now - iso8601.parse_date(instance.launch_time)
+            # we assume the timezone is an offset of a multiple of hours, so the timezone doesn't actually matter
+            uptime = now - iso8601.parse_date(instance.launch_time).replace(tzinfo=None)
             uptime_since_hour_start = uptime.total_seconds() % (60*60)
 
             if uptime_since_hour_start > min_minutes_into_hour:
