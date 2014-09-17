@@ -20,7 +20,8 @@ class AltScaler:
                  domain="cluster-deadmans-switch",
                  dryrun=False,
                  jobs_per_server=1,
-                 log_file=None):
+                 log_file=None,
+                 max_to_initialize=5):
         self.max_to_add = max_to_add
         self.time_per_job = time_per_job
         self.time_to_add_servers_fixed = time_to_add_servers_fixed
@@ -31,13 +32,14 @@ class AltScaler:
         self.dryrun = dryrun
         self.jobs_per_server = jobs_per_server
         self.log_file = log_file
+        self.max_to_initialize = max_to_initialize
 
     def get_unfulfilled_spot_requests(self, ec2):
         requests = ec2.get_all_spot_requests()
         open_requests = [r for r in requests if not (r.state in ['cancelled', 'closed', 'active'])]
         return open_requests
 
-    def classify_instances(self, ec2, jobs_per_host, exclude):
+    def classify_instances(self, ec2, jobs_per_host, exclude, cluster_group):
         """
         #bucket all instances into one of three states:
         #    1. running, but not initialized
@@ -48,7 +50,7 @@ class AltScaler:
         idle = []
         active = []
 
-        for instance in ec2.get_all_instances():
+        for instance in ec2.get_all_instances(filters={"instance.group-id": cluster_group.id}):
                 if instance.state in ['stopped', 'terminated']:
                     continue
 
@@ -112,8 +114,8 @@ class AltScaler:
                 best_to_add = servers_to_add
                 best_time = time
 
-        log.debug("Adding %d servers would give the best estimate of %s seconds to complete jobs", best_to_add, best_time)
-        return best_to_add
+        log.warn("Adding %d servers would give the best estimate of %s seconds to complete jobs", best_to_add, best_time)
+        return best_to_add, best_time
 
     def initialize_the_uninitialized(self, uninitialized, cluster):
         for instance in uninitialized:
@@ -145,13 +147,17 @@ class AltScaler:
         #        cluster.remove_nodes(nodes)
 
     def scale_up(self, job_count, running_servers, cluster):
-        servers_to_add = self.calc_number_of_servers_to_add(self.max_to_add, job_count, self.jobs_per_server,
+        servers_to_add, estimated_time_to_complete = self.calc_number_of_servers_to_add(self.max_to_add, job_count, self.jobs_per_server,
                                                             running_servers, self.time_per_job,
                                                             self.time_to_add_servers_fixed, self.time_to_add_servers_per_server)
         unfulfilled_spot_requests = self.get_unfulfilled_spot_requests(cluster.ec2)
-        log.warn("Estimated needed %d additional servers, currently %d open requests", servers_to_add, len(unfulfilled_spot_requests))
+        log.warn("Estimated needed %d additional servers to complete job in %d seconds, currently %d open requests", servers_to_add, estimated_time_to_complete, len(unfulfilled_spot_requests))
+
+        cancel_count = 0
+        spots_to_create = 0
         if servers_to_add > len(unfulfilled_spot_requests):
             log.warn("Creating spot requests: add_nodes(%s, spot_bid=%s, spot_only=True, instance_type=%s)", servers_to_add, self.spot_bid, self.instance_type)
+            spots_to_create = servers_to_add - len(unfulfilled_spot_requests)
             if not self.dryrun:
                 cluster.add_nodes(servers_to_add, spot_bid=self.spot_bid, spot_only=True, instance_type=self.instance_type)
         elif servers_to_add < len(unfulfilled_spot_requests):
@@ -159,6 +165,12 @@ class AltScaler:
             # cancel the last ones first, because they're less likely to be in the middle of being fulfilled
             #cluster.ec2.conn.cancel_spot_request(unfulfilled_spot_requests[-cancel_count:])
             cluster.ec2.conn.cancel_spot_instance_requests(unfulfilled_spot_requests[-cancel_count:])
+
+        return {'servers_to_add': servers_to_add,
+                'estimated_time_to_complete': estimated_time_to_complete,
+                'unfulfilled_spot_requests': unfulfilled_spot_requests,
+                'cancel_count': cancel_count,
+                'spots_to_create': spots_to_create}
 
     def heartbeat(self, region, key, secret, domain):
         sdbc = boto.sdb.connect_to_region(region.name,
@@ -193,38 +205,53 @@ class AltScaler:
                 result.append(instance)
         return result
 
-    def append_to_log(self, job_count, jobs_per_host, uninitialized, idle, active, nodes_to_shutdown):
+    def append_to_log(self, job_count, jobs_per_host, uninitialized, pending_uninitialized, idle, active, nodes_to_shutdown, scale_up_state):
         log.warn("uninitialized=%s, idle=%s, active=%s, nodes_to_shutdown=%s", uninitialized, idle, active, nodes_to_shutdown)
 
         if self.log_file == None:
             return
 
         instances = []
-        for l, t in ((uninitialized, "uninitialized"), (idle, "idle"), (active, "active"), ("ready_to_shutdown", nodes_to_shutdown)):
+        for l, t in ((uninitialized, "uninitialized"), (pending_uninitialized, "pending_uninitialized"), (idle, "idle"), (active, "active"), ("ready_to_shutdown", nodes_to_shutdown)):
             for instance in l:
                 alias = None
                 if "alias" in instance.tags:
                     alias = instance.tags["alias"]
-                instances.append({"alias": alias, "id": l.id, "type": t})
+                running = 0
+                if alias in jobs_per_host:
+                    running = jobs_per_host[alias]
+                instances.append({"alias": alias, "id": l.id, "type": t, "running": running})
 
         now = datetime.datetime.now()
         with open(self.log_file, "a") as fd:
-            fd.write(json.dumps(dict(instances=instances, timestamp=now.isoformat())))
+            record = dict(instances=instances, timestamp=now.isoformat(), scale_up_state=scale_up_state, job_count=job_count)
+            fd.write(json.dumps(record))
             fd.write("\n")
 
     def poll_state(self, cluster):
         ec2 = cluster.ec2
 
-        job_count, jobs_per_host = self.get_job_status(cluster.master_node.ssh)
-        uninitialized, idle, active = self.classify_instances(cluster.ec2, jobs_per_host, [cluster.master_node.id])
-        nodes_to_shutdown = self.only_those_near_hour_boundary(idle, min_minutes_into_hour=45)
+        # loop until pending_uninitialized is empty
+        while True:
+            job_count, jobs_per_host = self.get_job_status(cluster.master_node.ssh)
+            uninitialized, idle, active = self.classify_instances(cluster.ec2, jobs_per_host, [cluster.master_node.id], cluster.cluster_group)
+            nodes_to_shutdown = self.only_those_near_hour_boundary(idle, min_minutes_into_hour=45)
 
-        self.append_to_log(job_count, jobs_per_host, uninitialized, idle, active, nodes_to_shutdown)
+            # initializing nodes can take several minutes, so set a cap on how many we do before we re-inspect the state of the cluster
+            pending_uninitialized = []
+            if len(uninitialized) > self.max_to_initialize:
+                pending_uninitialized = uninitialized[self.max_to_initialize:]
+                uninitialized = uninitialized[:self.max_to_initialize]
 
-        self.initialize_the_uninitialized(uninitialized, cluster)
-        self.shutdown_the_idle(idle, cluster)
-        self.scale_up(job_count, len(active), cluster)
-        self.heartbeat(ec2.region, ec2.aws_access_key_id, ec2.aws_secret_access_key, self.domain)
+            self.initialize_the_uninitialized(uninitialized, cluster)
+            self.shutdown_the_idle(idle, cluster)
+            scale_up_state = self.scale_up(job_count, len(active), cluster)
+            self.heartbeat(ec2.region, ec2.aws_access_key_id, ec2.aws_secret_access_key, self.domain)
+
+            self.append_to_log(job_count, jobs_per_host, uninitialized, pending_uninitialized, idle, active, nodes_to_shutdown, scale_up_state)
+
+            if len(pending_uninitialized) == 0:
+                break
 
     def run(self, cluster):
         self.poll_state(cluster)
