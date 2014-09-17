@@ -71,7 +71,7 @@ class AltScaler:
         return (uninitialized, idle, active)
 
     def get_job_stats(self, ssh):
-        lines = ssh.execute("/xchip/scripts/get_queue_stats_json")
+        lines = ssh.execute("/tmp/cluster_scripts/get_queue_stats_json")
         stats = json.loads("".join(lines))
         return stats
 
