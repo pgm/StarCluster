@@ -206,7 +206,7 @@ class AltScaler:
         return result
 
     def append_to_log(self, job_count, jobs_per_host, uninitialized, pending_uninitialized, idle, active, nodes_to_shutdown, scale_up_state):
-        log.warn("uninitialized=%s, idle=%s, active=%s, nodes_to_shutdown=%s", uninitialized, idle, active, nodes_to_shutdown)
+        log.warn("uninitialized=%s, pending_uninitialized=%s, idle=%s, active=%s, nodes_to_shutdown=%s", uninitialized, pending_uninitialized, idle, active, nodes_to_shutdown)
 
         if self.log_file == None:
             return
