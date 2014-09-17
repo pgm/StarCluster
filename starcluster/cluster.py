@@ -1036,15 +1036,9 @@ class Cluster(object):
             else:
                 self.ec2.wait_for_propagation(instances=resp[0].instances)
 
-        for node in self.nodes:
-            print "at this time, we know about (alias=%s, id=%s, spot_id=%s) " % (node.alias, node.id, node.spot_id)
-
         if not spot_only:
             self.wait_for_cluster(msg="Waiting for node(s) to come up...")
             log.debug("Adding node(s): %s" % aliases)
-
-            for node in self.nodes:
-                print "now that node is up, we know about (alias=%s, id=%s, spot_id=%s) " % (node.alias, node.id, node.spot_id)
 
             for alias in aliases:
                 node = self.get_node(alias)
