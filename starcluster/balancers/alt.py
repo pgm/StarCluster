@@ -169,7 +169,7 @@ class AltScaler:
 
         return {'servers_to_add': servers_to_add,
                 'estimated_time_to_complete': estimated_time_to_complete,
-                'unfulfilled_spot_requests': unfulfilled_spot_requests,
+                'unfulfilled_spot_requests': len(unfulfilled_spot_requests),
                 'cancel_count': cancel_count,
                 'spots_to_create': spots_to_create}
 
