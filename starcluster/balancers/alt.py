@@ -164,7 +164,8 @@ class AltScaler:
             cancel_count = len(unfulfilled_spot_requests) - servers_to_add
             # cancel the last ones first, because they're less likely to be in the middle of being fulfilled
             #cluster.ec2.conn.cancel_spot_request(unfulfilled_spot_requests[-cancel_count:])
-            cluster.ec2.conn.cancel_spot_instance_requests(unfulfilled_spot_requests[-cancel_count:])
+            request_ids = [request.id for request in unfulfilled_spot_requests[-cancel_count:]]
+            cluster.ec2.conn.cancel_spot_instance_requests(request_ids)
 
         return {'servers_to_add': servers_to_add,
                 'estimated_time_to_complete': estimated_time_to_complete,
