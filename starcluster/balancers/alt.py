@@ -21,7 +21,8 @@ class AltScaler:
                  dryrun=False,
                  jobs_per_server=1,
                  log_file=None,
-                 max_to_initialize=5):
+                 max_to_initialize=5,
+                 max_instances=10):
         self.max_to_add = max_to_add
         self.time_per_job = time_per_job
         self.time_to_add_servers_fixed = time_to_add_servers_fixed
@@ -33,6 +34,7 @@ class AltScaler:
         self.jobs_per_server = jobs_per_server
         self.log_file = log_file
         self.max_to_initialize = max_to_initialize
+        self.max_instances = max_instances
 
     def get_unfulfilled_spot_requests(self, ec2):
         requests = ec2.get_all_spot_requests()
@@ -151,7 +153,13 @@ class AltScaler:
                                                             running_servers, self.time_per_job,
                                                             self.time_to_add_servers_fixed, self.time_to_add_servers_per_server)
         unfulfilled_spot_requests = self.get_unfulfilled_spot_requests(cluster.ec2)
+
         log.warn("Estimated needed %d additional servers to complete job in %d seconds, currently %d open requests", servers_to_add, estimated_time_to_complete, len(unfulfilled_spot_requests))
+
+        if (running_servers + servers_to_add) > self.max_instances:
+            clamped_servers_to_add = max(0, min(self.max_instances - running_servers, servers_to_add))
+            log.warn("%d servers are running, and adding %d would exceed our max of %d, so only adding %d" % (running_servers, servers_to_add, self.max_instances, clamped_servers_to_add))
+            servers_to_add = clamped_servers_to_add
 
         cancel_count = 0
         spots_to_create = 0
@@ -199,10 +207,11 @@ class AltScaler:
         now = datetime.datetime.now()
         for instance in instances:
             # we assume the timezone is an offset of a multiple of hours, so the timezone doesn't actually matter
-            uptime = now - iso8601.parse_date(instance.launch_time).replace(tzinfo=None)
-            uptime_since_hour_start = uptime.total_seconds() % (60*60)
+            up_time = now - iso8601.parse_date(instance.launch_time).replace(tzinfo=None)
+            minutes_since_hour_start = (up_time.total_seconds()/60) % 60
+            log.warn("%s has been up for %d minutes past hour boundary" % (instance, minutes_since_hour_start))
 
-            if uptime_since_hour_start > min_minutes_into_hour:
+            if minutes_since_hour_start > min_minutes_into_hour:
                 result.append(instance)
         return result
 

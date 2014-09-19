@@ -36,6 +36,9 @@ class CmdScaleCluster(ClusterCompleter):
         parser.add_option("--spot_bid", dest="spot_bid",
                           action="store", type="float", default=None,
                           help="spot bid price")
+        parser.add_option("--max_instances", dest="max_instances",
+                          action="store", type="int", default=None,
+                          help="max_instances")
         parser.add_option("--max_to_add", dest="max_to_add",
                           action="store", type="int", default=None,
                           help="max_to_add")
