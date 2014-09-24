@@ -83,7 +83,8 @@ class AltScaler:
 
 
     def estimate_completion_time(self, job_count, jobs_per_server, running_servers, servers_to_add, time_per_job, time_to_add_servers_fixed, time_to_add_servers_per_server):
-        servers_needed = job_count/jobs_per_server
+        # integer version of ceil(job_count/jobs_per_server)
+        servers_needed = (job_count+jobs_per_server-1)/jobs_per_server
 
         if servers_needed == 0:
             return 0
@@ -132,6 +133,9 @@ class AltScaler:
                 assert "initialized" in cluster.get_node(alias).tags
 
     def shutdown_the_idle(self, idle, cluster):
+        if len(idle) == 0:
+            return
+
         # would be faster to just terminate the instance.  Is there any problem with that?
         # trying termination first.  One of the problems with clean stopping is if the node initialization failed
         # then it won't be able to remove it either.
