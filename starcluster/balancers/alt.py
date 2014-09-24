@@ -22,7 +22,8 @@ class AltScaler:
                  jobs_per_server=1,
                  log_file=None,
                  max_to_initialize=5,
-                 max_instances=10):
+                 max_instances=10,
+                 shutdown_allowed_after=45):
         self.max_to_add = max_to_add
         self.time_per_job = time_per_job
         self.time_to_add_servers_fixed = time_to_add_servers_fixed
@@ -35,6 +36,7 @@ class AltScaler:
         self.log_file = log_file
         self.max_to_initialize = max_to_initialize
         self.max_instances = max_instances
+        self.shutdown_allowed_after = shutdown_allowed_after
 
     def get_unfulfilled_spot_requests(self, ec2):
         requests = ec2.get_all_spot_requests()
@@ -246,7 +248,7 @@ class AltScaler:
         while True:
             job_count, jobs_per_host = self.get_job_status(cluster.master_node.ssh)
             uninitialized, idle, active = self.classify_instances(cluster.ec2, jobs_per_host, [cluster.master_node.id], cluster.cluster_group)
-            nodes_to_shutdown = self.only_those_near_hour_boundary(idle, min_minutes_into_hour=45)
+            nodes_to_shutdown = self.only_those_near_hour_boundary(idle, min_minutes_into_hour=self.shutdown_allowed_after)
 
             # initializing nodes can take several minutes, so set a cap on how many we do before we re-inspect the state of the cluster
             pending_uninitialized = []
@@ -255,7 +257,7 @@ class AltScaler:
                 uninitialized = uninitialized[:self.max_to_initialize]
 
             self.initialize_the_uninitialized(uninitialized, cluster)
-            self.shutdown_the_idle(idle, cluster)
+            self.shutdown_the_idle(nodes_to_shutdown, cluster)
             scale_up_state = self.scale_up(job_count, len(active), cluster)
             self.heartbeat(ec2.region, ec2.aws_access_key_id, ec2.aws_secret_access_key, self.domain)
 
