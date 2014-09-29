@@ -119,7 +119,7 @@ class AltScaler:
                 best_to_add = servers_to_add
                 best_time = time
 
-        log.warn("Adding %d servers would give the best estimate of %s seconds to complete jobs", best_to_add, best_time)
+        log.warn("Adding %d servers would give the best estimate of %s seconds to complete %d jobs", best_to_add, best_time, job_count)
         return best_to_add, best_time
 
     def initialize_the_uninitialized(self, uninitialized, cluster):
