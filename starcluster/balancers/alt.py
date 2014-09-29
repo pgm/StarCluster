@@ -194,7 +194,10 @@ class AltScaler:
 
         assert sdbc != None
 
-        dom = sdbc.get_domain(domain, validate=False)
+        dom = sdbc.lookup(domain)
+        if dom == None:
+            log.warn("Creating new domain %d for heartbeats", domain)
+            dom = sdbc.create_domain(domain)
         dom.put_attributes('heartbeat', {'timestamp': time.time(), 'hostname': socket.getfqdn()})
 
     def get_job_status(self, ssh):
