@@ -1096,6 +1096,7 @@ class Node(object):
                 sshopts += ' -A'
             if pseudo_tty:
                 sshopts += ' -t'
+            sshopts += " -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
             ssh_cmd = static.SSH_TEMPLATE % dict(opts=sshopts, user=user,
                                                  host=self.addr)
             if command:
