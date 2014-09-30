@@ -38,9 +38,9 @@ FATAL = logging.FATAL
 RAW = "raw"
 
 RAW_FORMAT = "%(message)s"
-INFO_FORMAT = " ".join([">>>", RAW_FORMAT])
-DEFAULT_CONSOLE_FORMAT = " - ".join(["%(levelname)s", RAW_FORMAT])
-ERROR_CONSOLE_FORMAT = " ".join(["!!!", DEFAULT_CONSOLE_FORMAT])
+INFO_FORMAT = " ".join([">>> %(asctime)s", RAW_FORMAT])
+DEFAULT_CONSOLE_FORMAT = " - ".join(["%(levelname)s %(asctime)s", RAW_FORMAT])
+ERROR_CONSOLE_FORMAT = " ".join(["!!! %(asctime)s", DEFAULT_CONSOLE_FORMAT])
 WARN_CONSOLE_FORMAT = " ".join(["***", DEFAULT_CONSOLE_FORMAT])
 FILE_INFO_FORMAT = " - ".join(["%(filename)s:%(lineno)d",
                                DEFAULT_CONSOLE_FORMAT])
