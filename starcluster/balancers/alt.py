@@ -8,6 +8,7 @@ import time
 from starcluster.logger import log
 import datetime
 import iso8601
+from starcluster.static import SECURITY_GROUP_PREFIX
 
 class AltScaler:
     def __init__(self,
@@ -196,8 +197,9 @@ class AltScaler:
 
         dom = sdbc.lookup(domain)
         if dom == None:
-            log.warn("Creating new domain %d for heartbeats", domain)
+            log.warn("Creating new domain %s for heartbeats", domain)
             dom = sdbc.create_domain(domain)
+        log.warn("sending heartbeat to domain %s", domain)
         dom.put_attributes('heartbeat', {'timestamp': time.time(), 'hostname': socket.getfqdn()})
 
     def get_job_status(self, ssh):
@@ -266,7 +268,11 @@ class AltScaler:
             self.initialize_the_uninitialized(uninitialized, cluster)
             self.shutdown_the_idle(nodes_to_shutdown, cluster)
             scale_up_state = self.scale_up(job_count, len(active), cluster)
-            self.heartbeat(ec2.region, ec2.aws_access_key_id, ec2.aws_secret_access_key, self.domain)
+            
+            cluster_name = cluster.cluster_group.name
+            assert cluster_name.startswith(SECURITY_GROUP_PREFIX)
+            cluster_name = cluster_name[len(SECURITY_GROUP_PREFIX):]
+            self.heartbeat(ec2.region, ec2.aws_access_key_id, ec2.aws_secret_access_key, "%s-heartbeats" % )
 
             self.append_to_log(job_count, jobs_per_host, uninitialized, pending_uninitialized, idle, active, nodes_to_shutdown, scale_up_state)
 
