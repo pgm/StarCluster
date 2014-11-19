@@ -272,7 +272,7 @@ class AltScaler:
             cluster_name = cluster.cluster_group.name
             assert cluster_name.startswith(SECURITY_GROUP_PREFIX)
             cluster_name = cluster_name[len(SECURITY_GROUP_PREFIX):]
-            self.heartbeat(ec2.region, ec2.aws_access_key_id, ec2.aws_secret_access_key, "%s-heartbeats" % )
+            self.heartbeat(ec2.region, ec2.aws_access_key_id, ec2.aws_secret_access_key, "%s-heartbeats" % cluster_name)
 
             self.append_to_log(job_count, jobs_per_host, uninitialized, pending_uninitialized, idle, active, nodes_to_shutdown, scale_up_state)
 
