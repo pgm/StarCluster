@@ -34,6 +34,27 @@ SGE_STATS_DIR = os.path.join(static.STARCLUSTER_CFG_DIR, 'sge')
 DEFAULT_STATS_DIR = os.path.join(SGE_STATS_DIR, '%s')
 DEFAULT_STATS_FILE = os.path.join(DEFAULT_STATS_DIR, 'sge-stats.csv')
 
+SLOTS_BY_INSTANCE_TYPE={
+    "t2.micro":(1, 1),
+    "t2.small":(1, 2),
+    "t2.medium":(2, 4),
+    "m3.medium":(1, 3.75),
+    "m3.large":(2, 7.5),
+    "m3.xlarge":(4, 15),
+    "m3.2xlarge":(8, 30),
+    "c3.large":(2, 3.75),
+    "c3.xlarge":(4, 7.5),
+    "c3.2xlarge":(8, 15),
+    "c3.4xlarge":(16, 30),
+    "c3.8xlarge":(32, 60),
+    "r3.large":(2,15.25),
+    "r3.xlarge":(4,30.5),
+    "r3.2xlarge":(8,61),
+    "r3.4xlarge":(16,122),
+    "r3.8xlarge":(32,244)}
+    
+def get_slots_per_host(instance_type):
+    return SLOTS_BY_INSTANCE_TYPE[instance_type][0]
 
 class SGEStats(object):
     """
@@ -102,11 +123,14 @@ class SGEStats(object):
 
     def _parse_job(self, job, queue_name=None):
         jstate = job.getAttribute("state")
-        jdict = dict(job_state=jstate, queue_name=queue_name)
+        jdict = dict(job_state=jstate, queue_name=queue_name, hard_requests={})
         for node in job.childNodes:
             if node.nodeType == xml.dom.minidom.Node.ELEMENT_NODE:
                 for child in node.childNodes:
-                    jdict[node.nodeName] = child.data
+                    if node.nodeName == "hard_request":
+                        jdict['hard_requests'][node.getAttribute("name")] = child.data
+                    else:
+                        jdict[node.nodeName] = child.data
         num_tasks = self._count_tasks(jdict)
         log.debug("Job contains %d tasks" % num_tasks)
         return [jdict] * num_tasks
@@ -228,25 +252,6 @@ class SGEStats(object):
             if q.startswith('all.q@'):
                 slots += self.queues.get(q).get('slots')
         return slots
-
-    def slots_per_host(self):
-        """
-        Returns the number of slots per host. If for some reason the cluster is
-        inconsistent, this will return -1 for example, if you have m1.large and
-        m1.small in the same cluster
-        """
-        total = self.count_total_slots()
-        if total == 0:
-            return total
-        single = 0
-        for q in self.queues:
-            if q.startswith('all.q@'):
-                single = self.queues.get(q).get('slots')
-                break
-        if (total != (single * len(self.hosts))):
-            raise exception.BaseException(
-                "ERROR: Number of slots not consistent across cluster")
-        return single
 
     def oldest_queued_job_age(self):
         """
@@ -717,19 +722,35 @@ class SGELoadBalancer(LoadBalancer):
             return False
         running_jobs = self.stat.get_running_jobs()
         used_slots = sum([int(j['slots']) for j in running_jobs])
-        qw_slots = sum([int(j['slots']) for j in queued_jobs])
-        slots_per_host = self.stat.slots_per_host()
+        
+        # find the set of hard constraints that could prevent jobs from running (slots and h_vmem)
+        # and see how many instances it'd take to pack these into the current instance type
+        # TODO: write method which does this.  need_to_add = max(pack(), pack())
+        qw_slots = [int(j['slots']) for j in queued_jobs]
+        qw_slots_sum = sum(qw_slots)
+        qw_h_vmems = []
+        for j in queued_jobs:
+            if "h_vmem" in j['hard_requests']:
+                qw_h_vmems.append(j['hard_requests']["h_vmem"])
+
         avail_slots = total_slots - used_slots
         need_to_add = 0
+
         if num_nodes < self.min_nodes:
             log.info("Adding node: below minimum (%d)" % self.min_nodes)
             need_to_add = self.min_nodes - num_nodes
         elif total_slots == 0:
             # no slots, add one now
             need_to_add = 1
-        elif qw_slots > avail_slots:
+        elif qw_slots_sum > avail_slots:  # I think this should be revisited
+            # it seems like the spirit is that we are only increasing cluster size
+            # more jobs then could be scheduled immediately one of those jobs is waiting in the queue
+            # is very old.  However, it seems like it'd be sufficient to just test one of those cases.
+            # The old job test is good to avoid lots of fast jobs resulting in creating and oversized cluster.
+            # the test on making sure we have enough slots for all jobs isn't great because jobs might be 
+            # not running due to hitting some other hard constraint.
             log.info("Queued jobs need more slots (%d) than available (%d)" %
-                     (qw_slots, avail_slots))
+                     (qw_slots_sum, avail_slots))
             oldest_job_dt = self.stat.oldest_queued_job_age()
             now = self.get_remote_time()
             age_delta = now - oldest_job_dt
@@ -737,13 +758,16 @@ class SGELoadBalancer(LoadBalancer):
                 log.info("A job has been waiting for %d seconds "
                          "longer than max: %d" %
                          (age_delta.seconds, self.longest_allowed_queue_time))
-                if slots_per_host != 0:
-                    need_to_add = qw_slots / slots_per_host
-                else:
-                    need_to_add = 1
+                # determine how many nodes we should add based on dividing the slots needed by waiting jobs by the slots_per_host and rounding up
+                slots_per_host = get_slots_per_host(self._instance_type or self._cluster.node_instance_type)
+                need_to_add = (qw_slots_sum+slots_per_host-1) / slots_per_host
             else:
                 log.info("No queued jobs older than %d seconds" %
                          self.longest_allowed_queue_time)
+        else:
+            # this seems bad, because memory exhaustion could be preventing nodes from being used.
+            log.info("Not adding any nodes because sufficent slots (%d) for remaining queued jobs (%d)", avail_slots, qw_slots_sum)
+            
         max_add = self.max_nodes - len(self._cluster.running_nodes)
         need_to_add = min(self.add_nodes_per_iteration, need_to_add, max_add)
         if need_to_add < 1:
