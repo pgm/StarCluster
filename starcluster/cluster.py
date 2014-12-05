@@ -1967,7 +1967,8 @@ class Cluster(object):
     def get_impaired_nodes(self):
         impaired_statuses = self.ec2.conn.get_all_instance_status(
             instance_ids=[node.id for node in self.nodes],
-            filters={"instance-status.status": "impaired"}
+            filters={"instance-status.status": "impaired",
+                     "instance.group-name": self._security_group}
         )
         impaired_nodes_ids = [impaired.id for impaired in impaired_statuses]
         return [node for node in self.nodes if node.id in impaired_nodes_ids]
