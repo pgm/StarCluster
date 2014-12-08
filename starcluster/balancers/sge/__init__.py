@@ -56,6 +56,9 @@ SLOTS_BY_INSTANCE_TYPE={
 def get_slots_per_host(instance_type):
     return SLOTS_BY_INSTANCE_TYPE[instance_type][0]
 
+def get_mem_per_host(instance_type):
+    return SLOTS_BY_INSTANCE_TYPE[instance_type][1]
+
 class SGEStats(object):
     """
     SunGridEngine stats parser
@@ -700,6 +703,37 @@ class SGELoadBalancer(LoadBalancer):
                      self.stabilization_time)
             log.info("Waiting for cluster to stabilize...")
         return is_stabilized
+    
+    def _determine_required_nodes(self, required_slots, required_mem):
+        instance_type = self._instance_type or self._cluster.node_instance_type
+        slots_per_host = get_slots_per_host(instance_type)
+        mem_per_host = get_mem_per_host(instance_type)
+        
+        def pack(constraint_name, counts, capacity_per_node):
+            required = 0
+            remaining_capacity = 0
+            for c in counts:
+                if remaining_capacity < c:
+                    if capacity_per_node < c:
+                        raise Exception("New instance type %s has %s=%s, but a queued job requires %s" % (instance_type, constraint_name, capacity_per_node, c))
+                    remaining_capacity = capacity_per_node
+                    required += 1
+                remaining_capacity -= c
+            return required
+        
+        def convert_to_megs(v):
+            if v[-1] == "G":
+                return int(v[:-1])*1024
+            elif v[-1] == "M":
+                return int(v[:-1])
+            else:
+                raise Exception("Unable to convert %s to megs", repr(v))
+        
+        required_hosts_to_satisfy_slots = pack("Slots", required_slots, slots_per_host)
+        required_hosts_to_satisfy_vmem = pack("VMem", [convert_to_megs(v) for v in required_mem], mem_per_host*1024)
+
+        return max(required_hosts_to_satisfy_slots, required_hosts_to_satisfy_vmem)
+                
 
     def _eval_add_node(self):
         """
@@ -742,31 +776,22 @@ class SGELoadBalancer(LoadBalancer):
         elif total_slots == 0:
             # no slots, add one now
             need_to_add = 1
-        elif qw_slots_sum > avail_slots:  # I think this should be revisited
-            # it seems like the spirit is that we are only increasing cluster size
-            # more jobs then could be scheduled immediately one of those jobs is waiting in the queue
-            # is very old.  However, it seems like it'd be sufficient to just test one of those cases.
-            # The old job test is good to avoid lots of fast jobs resulting in creating and oversized cluster.
-            # the test on making sure we have enough slots for all jobs isn't great because jobs might be 
-            # not running due to hitting some other hard constraint.
-            log.info("Queued jobs need more slots (%d) than available (%d)" %
-                     (qw_slots_sum, avail_slots))
+        else:
+            need_to_add = self._determine_required_nodes(qw_slots, qw_h_vmems)
+            
+            log.info("Queued jobs need more nodes (%d) than available (%d)" %
+                     (need_to_add, num_nodes))
             oldest_job_dt = self.stat.oldest_queued_job_age()
             now = self.get_remote_time()
             age_delta = now - oldest_job_dt
-            if age_delta.seconds > self.longest_allowed_queue_time:
-                log.info("A job has been waiting for %d seconds "
-                         "longer than max: %d" %
-                         (age_delta.seconds, self.longest_allowed_queue_time))
-                # determine how many nodes we should add based on dividing the slots needed by waiting jobs by the slots_per_host and rounding up
-                slots_per_host = get_slots_per_host(self._instance_type or self._cluster.node_instance_type)
-                need_to_add = (qw_slots_sum+slots_per_host-1) / slots_per_host
-            else:
+            if age_delta.seconds < self.longest_allowed_queue_time:
                 log.info("No queued jobs older than %d seconds" %
                          self.longest_allowed_queue_time)
-        else:
-            # this seems bad, because memory exhaustion could be preventing nodes from being used.
-            log.info("Not adding any nodes because sufficent slots (%d) for remaining queued jobs (%d)", avail_slots, qw_slots_sum)
+                need_to_add = 0
+            else:
+                log.info("A job has been waiting for %d seconds "
+                         "longer than max: %d, need to add %d nodes for remaining jobs" %
+                         (age_delta.seconds, self.longest_allowed_queue_time, need_to_add))
             
         max_add = self.max_nodes - len(self._cluster.running_nodes)
         need_to_add = min(self.add_nodes_per_iteration, need_to_add, max_add)
