@@ -34,35 +34,39 @@ SGE_STATS_DIR = os.path.join(static.STARCLUSTER_CFG_DIR, 'sge')
 DEFAULT_STATS_DIR = os.path.join(SGE_STATS_DIR, '%s')
 DEFAULT_STATS_FILE = os.path.join(DEFAULT_STATS_DIR, 'sge-stats.csv')
 
-SLOTS_BY_INSTANCE_TYPE={
-    "t2.micro":(1, 1),
-    "t2.small":(1, 2),
-    "t2.medium":(2, 4),
-    "m3.medium":(1, 3.75),
-    "m3.large":(2, 7.5),
-    "m3.xlarge":(4, 15),
-    "m3.2xlarge":(8, 30),
-    "c3.large":(2, 3.75),
-    "c3.xlarge":(4, 7.5),
-    "c3.2xlarge":(8, 15),
-    "c3.4xlarge":(16, 30),
-    "c3.8xlarge":(32, 60),
-    "r3.large":(2,15.25),
-    "r3.xlarge":(4,30.5),
-    "r3.2xlarge":(8,61),
-    "r3.4xlarge":(16,122),
-    "r3.8xlarge":(32,244)}
-    
+SLOTS_BY_INSTANCE_TYPE = {
+    "t2.micro": (1, 1),
+    "t2.small": (1, 2),
+    "t2.medium": (2, 4),
+    "m3.medium": (1, 3.75),
+    "m3.large": (2, 7.5),
+    "m3.xlarge": (4, 15),
+    "m3.2xlarge": (8, 30),
+    "c3.large": (2, 3.75),
+    "c3.xlarge": (4, 7.5),
+    "c3.2xlarge": (8, 15),
+    "c3.4xlarge": (16, 30),
+    "c3.8xlarge": (32, 60),
+    "r3.large": (2, 15.25),
+    "r3.xlarge": (4, 30.5),
+    "r3.2xlarge": (8, 61),
+    "r3.4xlarge": (16, 122),
+    "r3.8xlarge": (32, 244)}
+
+
 def get_slots_per_host(instance_type):
     return SLOTS_BY_INSTANCE_TYPE[instance_type][0]
 
+
 def get_mem_per_host(instance_type):
     return SLOTS_BY_INSTANCE_TYPE[instance_type][1]
+
 
 class SGEStats(object):
     """
     SunGridEngine stats parser
     """
+
     def __init__(self, remote_tzinfo=None):
         self.jobstat_cachesize = 200
         self.hosts = []
@@ -131,7 +135,8 @@ class SGEStats(object):
             if node.nodeType == xml.dom.minidom.Node.ELEMENT_NODE:
                 for child in node.childNodes:
                     if node.nodeName == "hard_request":
-                        jdict['hard_requests'][node.getAttribute("name")] = child.data
+                        jdict['hard_requests'][node.getAttribute("name")] = \
+                            child.data
                     else:
                         jdict[node.nodeName] = child.data
         num_tasks = self._count_tasks(jdict)
@@ -265,7 +270,7 @@ class SGEStats(object):
                 st = j['JB_submission_time']
                 dt = utils.iso_to_datetime_tuple(st)
                 return dt.replace(tzinfo=self.remote_tzinfo)
-        # todo: throw a "no queued jobs" exception
+                # todo: throw a "no queued jobs" exception
 
     def is_node_working(self, node):
         """
@@ -645,7 +650,7 @@ class SGELoadBalancer(LoadBalancer):
             log.info("Writing stats to file: %s" % self.stats_file)
         if self.plot_stats:
             log.info("Plotting stats to directory: %s" % self.plot_output_dir)
-        while(self._keep_polling):
+        while (self._keep_polling):
             cluster.recover(reboot_interval=self.reboot_interval,
                             n_reboot_restart=self.n_reboot_restart)
             cluster.clean()
@@ -703,37 +708,43 @@ class SGELoadBalancer(LoadBalancer):
                      self.stabilization_time)
             log.info("Waiting for cluster to stabilize...")
         return is_stabilized
-    
+
     def _determine_required_nodes(self, required_slots, required_mem):
         instance_type = self._instance_type or self._cluster.node_instance_type
         slots_per_host = get_slots_per_host(instance_type)
         mem_per_host = get_mem_per_host(instance_type)
-        
+
         def pack(constraint_name, counts, capacity_per_node):
             required = 0
             remaining_capacity = 0
             for c in counts:
                 if remaining_capacity < c:
                     if capacity_per_node < c:
-                        raise Exception("New instance type %s has %s=%s, but a queued job requires %s" % (instance_type, constraint_name, capacity_per_node, c))
+                        raise Exception("New instance type %s has %s=%s, "
+                                        "but a queued job requires %s" %
+                                        (instance_type, constraint_name,
+                                         capacity_per_node, c))
                     remaining_capacity = capacity_per_node
                     required += 1
                 remaining_capacity -= c
             return required
-        
+
         def convert_to_megs(v):
             if v[-1] == "G":
-                return int(v[:-1])*1024
+                return int(v[:-1]) * 1024
             elif v[-1] == "M":
                 return int(v[:-1])
             else:
                 raise Exception("Unable to convert %s to megs", repr(v))
-        
-        required_hosts_to_satisfy_slots = pack("Slots", required_slots, slots_per_host)
-        required_hosts_to_satisfy_vmem = pack("VMem", [convert_to_megs(v) for v in required_mem], mem_per_host*1024)
 
-        return max(required_hosts_to_satisfy_slots, required_hosts_to_satisfy_vmem)
-                
+        required_hosts_to_satisfy_slots = pack("Slots", required_slots,
+                                               slots_per_host)
+        required_mem_in_mb = [convert_to_megs(v) for v in required_mem]
+        required_hosts_to_satisfy_vmem = pack("VMem", required_mem_in_mb,
+                                              mem_per_host * 1024)
+
+        return max(required_hosts_to_satisfy_slots,
+                   required_hosts_to_satisfy_vmem)
 
     def _eval_add_node(self):
         """
@@ -754,20 +765,23 @@ class SGELoadBalancer(LoadBalancer):
         total_slots = self.stat.count_total_slots()
         if not self.has_cluster_stabilized() and total_slots > 0:
             return False
-        running_jobs = self.stat.get_running_jobs()
-        used_slots = sum([int(j['slots']) for j in running_jobs])
-        
-        # find the set of hard constraints that could prevent jobs from running (slots and h_vmem)
-        # and see how many instances it'd take to pack these into the current instance type
-        # TODO: write method which does this.  need_to_add = max(pack(), pack())
+        # running_jobs = self.stat.get_running_jobs()
+        # used_slots = sum([int(j['slots']) for j in running_jobs])
+
+        # find the set of hard constraints that could prevent jobs from
+        # running (slots and h_vmem)
+        # and see how many instances it'd take to pack these into the
+        # current instance type
+        # TODO: write method which does this.  need_to_add =
+        #            max(pack(), pack())
         qw_slots = [int(j['slots']) for j in queued_jobs]
-        qw_slots_sum = sum(qw_slots)
+        # qw_slots_sum = sum(qw_slots)
         qw_h_vmems = []
         for j in queued_jobs:
             if "h_vmem" in j['hard_requests']:
                 qw_h_vmems.append(j['hard_requests']["h_vmem"])
 
-        avail_slots = total_slots - used_slots
+        # avail_slots = total_slots - used_slots
         need_to_add = 0
 
         if num_nodes < self.min_nodes:
@@ -778,7 +792,7 @@ class SGELoadBalancer(LoadBalancer):
             need_to_add = 1
         else:
             need_to_add = self._determine_required_nodes(qw_slots, qw_h_vmems)
-            
+
             log.info("Queued jobs need more nodes (%d) than available (%d)" %
                      (need_to_add, num_nodes))
             oldest_job_dt = self.stat.oldest_queued_job_age()
@@ -790,9 +804,11 @@ class SGELoadBalancer(LoadBalancer):
                 need_to_add = 0
             else:
                 log.info("A job has been waiting for %d seconds "
-                         "longer than max: %d, need to add %d nodes for remaining jobs" %
-                         (age_delta.seconds, self.longest_allowed_queue_time, need_to_add))
-            
+                         "longer than max: %d, need to add %d nodes for "
+                         "remaining jobs" %
+                         (age_delta.seconds,
+                          self.longest_allowed_queue_time, need_to_add))
+
         max_add = self.max_nodes - len(self._cluster.running_nodes)
         need_to_add = min(self.add_nodes_per_iteration, need_to_add, max_add)
         if need_to_add < 1:
