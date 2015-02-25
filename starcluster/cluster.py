@@ -851,16 +851,19 @@ class Cluster(object):
 
     @property
     def nodes(self):
-        states = ['pending', 'running', 'stopping', 'stopped']
+        states = ['pending', 'running']
         filters = {'instance-state-name': states,
                    'instance.group-name': self._security_group}
         nodes = self.ec2.get_all_instances(filters=filters)
 
-        def filterFct(n):
-            return n.spot_instance_request_id is None or \
-                n.state in ["running", "pending"]
+        def filter_fct(n):
+            if self._security_group in [g.name for g in n.groups]:
+                return True
+            log.warning("EC2 issue? Got instance not in security group. "
+                        "Filtering out.")
+            return False
+        nodes = filter(filter_fct, nodes)
 
-        nodes = filter(filterFct, nodes)  # filter stopping/stopped spot
         # remove any cached nodes not in the current node list from EC2
         current_ids = [n.id for n in nodes]
 
@@ -1090,6 +1093,8 @@ class Cluster(object):
                          "above the spot bid.")
                 zone = None
         elif zone is None:
+            # Make sure master is in the same zone as the volumes mounted by
+            # the cluster.
             zone = getattr(self.zone, 'name', None)
 
         image_id = image_id or self.node_image_id
