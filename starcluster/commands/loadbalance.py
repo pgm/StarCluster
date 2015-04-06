@@ -103,6 +103,16 @@ class CmdLoadBalance(ClusterCompleter):
         parser.add_option("-K", "--kill-cluster", dest="kill_cluster",
                           action="store_true", default=False,
                           help="Terminate the cluster when the queue is empty")
+        parser.add_option("--reserve_nodes", dest="reserve_nodes",
+                          action="callback", type="int", default=0,
+                          callback=self._positive_int,
+                          help="Number of nodes to leave running even when "
+                               "there's no work to be done")
+        parser.add_option("--reserve_node_timeout", dest="reserve_node_timeout", 
+                          action="callback", type="int", default=60, 
+                          callback=self._positive_int,
+                          help="Reserved nodes will be shut down after this "
+                               "number of minutes with no activity in the queue")
         parser.add_option(
             "--reboot-interval", dest="reboot_interval", type="int",
             default=10, help="Delay in minutes beyond which a node is "

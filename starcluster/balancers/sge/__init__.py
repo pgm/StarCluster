@@ -445,7 +445,10 @@ class SGELoadBalancer(LoadBalancer):
                  min_nodes=None, kill_cluster=False, plot_stats=False,
                  plot_output_dir=None, dump_stats=False, stats_file=None,
                  reboot_interval=10, n_reboot_restart=False,
-                 ignore_grp=False, instance_type=None, spot_bid=None):
+                 ignore_grp=False, instance_type=None, spot_bid=None, reserve_nodes=0, reserve_node_timeout=60):
+        self.last_seen_queue_activity = None
+        self.reserve_nodes = reserve_nodes
+        self.reserve_node_timeout = reserve_node_timeout
         self._cluster = None
         self._keep_polling = True
         self._visualizer = None
@@ -663,6 +666,10 @@ class SGELoadBalancer(LoadBalancer):
                 time.sleep(self.polling_interval)
                 continue
             self.get_stats()
+            
+            if len(self.stat.get_running_jobs()) + len(self.stat.get_queued_jobs()) > 0:
+               self.last_seen_queue_activity = time.time()
+            
             log.info("Execution hosts: %d" % len(self.stat.hosts), extra=raw)
             log.info("Execution slots: %d" % self.stat.count_total_slots(),
                      extra=raw)
@@ -750,19 +757,26 @@ class SGELoadBalancer(LoadBalancer):
         return max(required_hosts_to_satisfy_slots,
                    required_hosts_to_satisfy_vmem)
 
+    def get_current_min_nodes(self):
+        """ returns self.min_nodes if there has been no recent activity or self.reserve_nodes if there has been activity """
+        if self.last_seen_queue_activity != None and self.last_seen_queue_activity + (self.reserve_node_timeout*60) > time.time():
+            return self.reserve_nodes
+        return self.min_nodes
+
     def _eval_add_node(self):
         """
         This function inspects the current state of the SGE queue and decides
         whether or not to add nodes to the cluster. Returns the number of nodes
         to add.
         """
+        min_nodes = self.get_current_min_nodes()
         num_nodes = len(self._cluster.nodes)
         if num_nodes >= self.max_nodes:
             log.info("Not adding nodes: already at or above maximum (%d)" %
                      self.max_nodes)
             return False
         queued_jobs = self.stat.get_queued_jobs()
-        if not queued_jobs and num_nodes >= self.min_nodes:
+        if not queued_jobs and num_nodes >= min_nodes:
             log.info("Not adding nodes: at or above minimum nodes "
                      "and no queued jobs...")
             return False
@@ -788,9 +802,9 @@ class SGELoadBalancer(LoadBalancer):
         # avail_slots = total_slots - used_slots
         need_to_add = 0
 
-        if num_nodes < self.min_nodes:
-            log.info("Adding node: below minimum (%d)" % self.min_nodes)
-            need_to_add = self.min_nodes - num_nodes
+        if num_nodes < min_nodes:
+            log.info("Adding node: below minimum (%d)" % min_nodes)
+            need_to_add = min_nodes - num_nodes
         elif total_slots == 0:
             # no slots, add one now
             need_to_add = 1
@@ -851,17 +865,18 @@ class SGELoadBalancer(LoadBalancer):
         This function uses the sge stats to decide whether or not to
         remove a node from the cluster.
         """
+        min_nodes = self.get_current_min_nodes()
         qlen = len(self.stat.get_queued_jobs())
         if qlen != 0:
             return
         if not self.has_cluster_stabilized():
             return
         num_nodes = len(self._cluster.nodes)
-        if num_nodes <= self.min_nodes:
+        if num_nodes <= min_nodes:
             log.info("Not removing nodes: already at or below minimum (%d)"
-                     % self.min_nodes)
+                     % min_nodes)
             return
-        max_remove = num_nodes - self.min_nodes
+        max_remove = num_nodes - min_nodes
         log.info("Looking for nodes to remove...")
         remove_nodes = self._find_nodes_for_removal(max_remove=max_remove)
         if not remove_nodes:
