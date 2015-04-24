@@ -63,7 +63,7 @@ class SSHClient(object):
                  private_key_pass=None,
                  compress=False,
                  port=22,
-                 timeout=30):
+                 timeout=3000):
         self._host = host
         self._port = port
         self._pkey = None

@@ -112,6 +112,8 @@ class StreamingNodeAdd(object):
         if not self.instances:
             return
 
+        log.info("Checking on instances: " + str(self.instances))
+        log.info("Ready instances: " + str(self.ready_instances))
         ssh_up = self.cluster.pool.map(lambda i: i.is_up(), self.instances)
         zip_instances = utils.filter_move(
             lambda i: i[0].state != 'running' or not i[1],
@@ -132,6 +134,7 @@ class StreamingNodeAdd(object):
     def stream_ready_instances(self):
         for ready_instance in self.ready_instances:
             log.info("Adding node: %s" % ready_instance.alias)
+            assert ready_instance.alias != "master"
             up_nodes = filter(lambda n: n.is_up(), self.cluster.nodes)
             try:
                 self.cluster.run_plugins(method_name="on_add_node",
