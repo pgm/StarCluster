@@ -745,9 +745,9 @@ class SGELoadBalancer(LoadBalancer):
 
         def convert_to_megs(v):
             if v[-1] == "G":
-                return int(v[:-1]) * 1024
+                return int(float(v[:-1]) * 1024)
             elif v[-1] == "M":
-                return int(v[:-1])
+                return int(float(v[:-1]))
             else:
                 raise Exception("Unable to convert %s to megs", repr(v))
 
