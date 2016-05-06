@@ -865,17 +865,26 @@ class Node(object):
             self.ssh.makedirs(path)
         self.ssh.execute('mount %s' % path)
 
+    def rewrite_etc_hosts(self, nodes, only_drop=False):
+        with self.ssh.remote_file('/etc/hosts', 'r') as host_file:
+            host_file_lines = host_file.read().split("\n")
+
+        host_file_lines = self.filter_etc_hosts_lines(nodes, host_file_lines)
+
+        if not only_drop:
+            for node in nodes:
+                host_file_lines.append(node.get_hosts_entry())
+
+        with self.ssh.remote_file('/etc/hosts.tmp', 'w') as host_file:
+            print >> host_file, "\n".join(host_file_lines)
+        
+        self.ssh.rename("/etc/hosts.tmp", "/etc/hosts")
+
     def add_to_etc_hosts(self, nodes):
         """
         Adds all names for node in nodes arg to this node's /etc/hosts file
         """
-        host_file_lines = self.remove_from_etc_hosts(nodes, return_lines=True)
-
-        for node in nodes:
-            host_file_lines.append(node.get_hosts_entry())
-
-        with self.ssh.remote_file('/etc/hosts', 'w') as host_file:
-            print >> host_file, "\n".join(host_file_lines)
+        self.rewrite_etc_hosts(nodes)
 
     @classmethod
     def filter_etc_hosts_lines(cls, nodes, lines):
@@ -893,22 +902,12 @@ class Node(object):
             log.debug("Filtered out: {}".format(rejected_lines))
         return lines, rejected_lines
 
-    def remove_from_etc_hosts(self, nodes, return_lines=False):
+    def remove_from_etc_hosts(self, nodes):
         """
         Remove all network names and ips for node in nodes arg from this node's
         /etc/hosts file
         """
-        with self.ssh.remote_file('/etc/hosts', 'r') as host_file:
-            lines = host_file.read().split("\n")
-
-        lines, rejected = self.filter_etc_hosts_lines(nodes, lines)
-
-        if return_lines:
-            return lines
-
-        if rejected:
-            with self.ssh.remote_file('/etc/hosts', 'w') as host_file:
-                print >> host_file, "\n".join(lines)
+        self.rewrite_etc_hosts(nodes, only_drop=True)
 
     def set_hostname(self, hostname=None):
         """

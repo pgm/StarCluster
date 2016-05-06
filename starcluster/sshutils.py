@@ -69,6 +69,7 @@ class SSHClient(object):
         self._pkey = None
         self._username = username or os.environ['LOGNAME']
         self._password = password
+        print "timeout=",timeout
         self._timeout = timeout
         self._sftp = None
         self._scp = None
@@ -269,6 +270,17 @@ class SSHClient(object):
         """
         try:
             return self.sftp.mkdir(path, mode)
+        except IOError:
+            if not ignore_failure:
+                raise
+
+    def rename(self, oldpath, newpath, ignore_failure=False):
+        """
+        Rename file on remote machine
+
+        """
+        try:
+            return self.sftp.rename(oldpath, newpath)
         except IOError:
             if not ignore_failure:
                 raise
