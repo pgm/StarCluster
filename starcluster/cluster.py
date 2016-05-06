@@ -1952,9 +1952,7 @@ class Cluster(object):
         except KeyboardInterrupt:
             raise
         except Exception:
-            import traceback
-            log.debug(traceback.format_exc())
-            log.error("Error occured while running plugin '%s':" % plugin_name)
+            log.error("Error occured while running plugin '%s':" % plugin_name, exc_info=True)
             raise
 
     def ssh_to_master(self, user='root', command=None, forward_x11=False,
