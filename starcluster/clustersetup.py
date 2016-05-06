@@ -411,12 +411,13 @@ class DefaultClusterSetup(ClusterSetup):
         master.remove_from_known_hosts('root', [node])
         master.remove_from_known_hosts(self._user, [node])
 
-        user_homedir = os.path.expanduser('~' + self._user)
-        targets = [posixpath.join('/root', '.ssh', 'known_hosts'),
-                   posixpath.join(user_homedir, '.ssh', 'known_hosts')]
+        non_master_nodes = [n for n in nodes if n != master]
 
-        for target in targets:
-            master.copy_remote_file_to_nodes(target, nodes)
+        # copy known_hosts files to remote nodes
+        for user in ["root", self._user]:
+            userpw = master.getpwnam(self._user)
+            known_hosts_file = posixpath.join(userpw.pw_dir, '.ssh', 'known_hosts')           
+            master.copy_remote_file_to_nodes(known_hosts_file, non_master_nodes)
 
     def on_remove_node(self, node, nodes, master, user, user_shell, volumes):
         self._nodes = nodes
