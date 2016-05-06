@@ -869,7 +869,7 @@ class Node(object):
         with self.ssh.remote_file('/etc/hosts', 'r') as host_file:
             host_file_lines = host_file.read().split("\n")
 
-        host_file_lines = self.filter_etc_hosts_lines(nodes, host_file_lines)
+        host_file_lines, _ = self.filter_etc_hosts_lines(nodes, host_file_lines)
 
         if not only_drop:
             for node in nodes:
