@@ -274,16 +274,13 @@ class SSHClient(object):
             if not ignore_failure:
                 raise
 
-    def rename(self, oldpath, newpath, ignore_failure=False):
+    def rename(self, oldpath, newpath):
         """
         Rename file on remote machine
 
         """
-        try:
-            return self.sftp.rename(oldpath, newpath)
-        except IOError:
-            if not ignore_failure:
-                raise
+        from paramiko.sftp import CMD_EXTENDED
+        return self.sftp._request(CMD_EXTENDED, "posix-rename@openssh.com", oldpath, newpath)
 
     def get_remote_file_lines(self, remote_file, regex=None, matching=True):
         """
