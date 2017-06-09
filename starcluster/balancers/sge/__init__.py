@@ -51,7 +51,12 @@ SLOTS_BY_INSTANCE_TYPE = {
     "r3.xlarge": (4, 30.5),
     "r3.2xlarge": (8, 61),
     "r3.4xlarge": (16, 122),
-    "r3.8xlarge": (32, 244)}
+    "r3.8xlarge": (32, 244),
+    "r4.large": (2, 15.25),
+    "r4.xlarge": (4, 30.5),
+    "r4.2xlarge": (8, 61),
+    "r4.4xlarge": (16, 122),
+    "r4.8xlarge": (32, 244)    }
 
 
 def get_slots_per_host(instance_type):
